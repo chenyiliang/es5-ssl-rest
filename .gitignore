@@ -1,0 +1,4 @@
+﻿#忽视所有文件，除了src目录和.gitignore
+.*
+**/target
+!.gitignore

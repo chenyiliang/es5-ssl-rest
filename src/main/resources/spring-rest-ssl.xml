@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<bean id="keyStoreResource" class="org.springframework.core.io.ClassPathResource">
+		<constructor-arg value="truststore.jks" />
+	</bean>
+
+	<bean id="defaultKeyStoreType" class="java.security.KeyStore"
+		factory-method="getDefaultType" />
+
+	<bean id="keyStore" class="java.security.KeyStore" factory-method="getInstance">
+		<constructor-arg ref="defaultKeyStoreType" />
+	</bean>
+
+	<bean id="loadKeyStore"
+		class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+		<property name="targetObject" ref="keyStore" />
+		<property name="targetMethod" value="load" />
+		<property name="arguments">
+			<list>
+				<bean factory-bean="keyStoreResource" factory-method="getInputStream" />
+				<value>t123456</value>
+			</list>
+		</property>
+	</bean>
+
+	<bean id="sslContextBuilder0" class="org.apache.http.ssl.SSLContextBuilder"
+		factory-method="create" />
+
+	<bean id="sslContextBuilder" factory-bean="sslContextBuilder0"
+		factory-method="loadTrustMaterial">
+		<constructor-arg index="0" ref="keyStore" />
+		<constructor-arg index="1">
+			<bean class="org.apache.http.conn.ssl.TrustSelfSignedStrategy" />
+		</constructor-arg>
+	</bean>
+
+	<bean id="sslContext" factory-bean="sslContextBuilder"
+		factory-method="build" />
+
+	<bean id="sslConnectionSocketFactory" class="org.apache.http.conn.ssl.SSLConnectionSocketFactory">
+		<constructor-arg index="0" ref="sslContext" />
+		<constructor-arg index="1"
+			value="#{T(org.apache.http.conn.ssl.NoopHostnameVerifier).INSTANCE}" />
+	</bean>
+
+	<bean id="registryBuilder" class="org.apache.http.config.RegistryBuilder"
+		factory-method="create"></bean>
+
+	<bean id="httpRegistryBuilder" factory-bean="registryBuilder"
+		factory-method="register">
+		<constructor-arg index="0" value="http" />
+		<constructor-arg index="1"
+			value="#{T(org.apache.http.conn.socket.PlainConnectionSocketFactory).getSocketFactory()}" />
+	</bean>
+
+	<bean id="httpsRegistryBuilder" factory-bean="httpRegistryBuilder"
+		factory-method="register">
+		<constructor-arg index="0" value="https" />
+		<constructor-arg index="1" ref="sslConnectionSocketFactory" />
+	</bean>
+
+	<bean id="socketFactoryRegistry" factory-bean="httpsRegistryBuilder"
+		factory-method="build" />
+
+	<bean id="connectionManager"
+		class="org.apache.http.impl.conn.PoolingHttpClientConnectionManager">
+		<constructor-arg index="0" ref="socketFactoryRegistry" />
+		<property name="maxTotal" value="10" />
+		<property name="defaultMaxPerRoute" value="10" />
+	</bean>
+
+	<bean id="httpClientBuilder" class="org.apache.http.impl.client.HttpClientBuilder"
+		factory-method="create">
+		<property name="connectionManager" ref="connectionManager" />
+		<property name="SSLHostnameVerifier"
+			value="#{T(org.apache.http.conn.ssl.NoopHostnameVerifier).INSTANCE}" />
+	</bean>
+
+	<bean id="httpClient" factory-bean="httpClientBuilder"
+		factory-method="build" />
+
+	<bean id="requestFactory"
+		class="org.springframework.http.client.HttpComponentsClientHttpRequestFactory">
+		<property name="httpClient" ref="httpClient" />
+	</bean>
+
+	<bean id="stringHttpMessageConverter"
+		class="org.springframework.http.converter.StringHttpMessageConverter">
+		<constructor-arg name="defaultCharset"
+			value="#{T(java.nio.charset.StandardCharsets).UTF_8}" />
+	</bean>
+
+	<bean id="resourceHttpMessageConverter"
+		class="org.springframework.http.converter.ResourceHttpMessageConverter" />
+
+	<bean id="allEncompassingFormHttpMessageConverter"
+		class="org.springframework.http.converter.support.AllEncompassingFormHttpMessageConverter">
+		<!-- 目前看只有使用最新Spring4的RestTemplate才能保证multipart上传文件和文本域字符不会乱码 -->
+		<property name="charset"
+			value="#{T(java.nio.charset.StandardCharsets).UTF_8}" />
+		<property name="multipartCharset"
+			value="#{T(java.nio.charset.StandardCharsets).UTF_8}" />
+		<property name="partConverters">
+			<list>
+				<ref bean="stringHttpMessageConverter" />
+				<ref bean="resourceHttpMessageConverter" />
+			</list>
+		</property>
+	</bean>
+
+	<bean id="restTemplate" class="org.springframework.web.client.RestTemplate">
+		<constructor-arg>
+			<!-- 这里排列顺序不能打乱 -->
+			<list>
+				<bean
+					class="org.springframework.http.converter.ByteArrayHttpMessageConverter" />
+				<ref bean="stringHttpMessageConverter" />
+				<ref bean="resourceHttpMessageConverter" />
+				<bean
+					class="org.springframework.http.converter.xml.SourceHttpMessageConverter" />
+				<ref bean="allEncompassingFormHttpMessageConverter" />
+				<bean
+					class="org.springframework.http.converter.xml.Jaxb2RootElementHttpMessageConverter" />
+				<bean
+					class="org.springframework.http.converter.json.MappingJackson2HttpMessageConverter" />
+			</list>
+		</constructor-arg>
+		<property name="requestFactory" ref="requestFactory" />
+	</bean>
+</beans>
